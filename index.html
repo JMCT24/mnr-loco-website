@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MNR Loco Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --bg2: #0f1318;
+    --bg3: #151a21;
+    --border: #1e2530;
+    --accent: #f0b429;
+    --accent2: #e05c2a;
+    --green: #2ecc71;
+    --red: #e74c3c;
+    --blue: #3498db;
+    --text: #c8d6e5;
+    --text2: #7f8c9a;
+    --text3: #4a5568;
+    --mono: 'JetBrains Mono', monospace;
+    --display: 'Bebas Neue', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--display);
+    font-size: 28px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text2);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    display: block;
+    margin-top: -4px;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  .pulse {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+    display: inline-block;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green); }
+    50% { opacity: 0.4; box-shadow: 0 0 2px var(--green); }
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .card.full-width { grid-column: 1 / -1; }
+
+  .card-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg3);
+  }
+
+  .card-title {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .card-body { padding: 16px; }
+
+  /* Live locos */
+  .loco-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 80px 70px;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-bottom: 6px;
+    background: var(--bg);
+    transition: border-color 0.2s;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .loco-row:hover { border-color: var(--accent); }
+
+  .loco-row.target { border-left: 3px solid var(--accent); }
+  .loco-row.ct-line { border-left: 3px solid var(--green); }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .loco-num {
+    font-size: 20px;
+    font-family: var(--display);
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+
+  .loco-num.target-loco { color: var(--accent); text-shadow: 0 0 12px rgba(240,180,41,0.5); }
+
+  .loco-info { min-width: 0; }
+  .loco-train { font-size: 12px; color: var(--text); }
+  .loco-detail { font-size: 11px; color: var(--text2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .speed-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+
+  .speed-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue), var(--accent));
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  .branch-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-align: center;
+  }
+
+  .branch-Hudson { background: #1a2a3a; color: #5ba3d9; }
+  .branch-Harlem { background: #2a1a2a; color: #c084d9; }
+  .branch-NewHaven { background: #1a2a1a; color: #5dd95b; }
+  .branch-Danbury { background: #2a2a1a; color: #d9c85b; }
+  .branch-Waterbury { background: #2a1a1a; color: #d97a5b; }
+  .branch-NewCanaan { background: #1a1a2a; color: #5b8dd9; }
+
+  .speed-text { font-size: 12px; color: var(--text2); text-align: right; }
+
+  /* Station cards */
+  .station-card {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-bottom: 8px;
+    background: var(--bg);
+  }
+
+  .station-name {
+    font-family: var(--display);
+    font-size: 20px;
+    letter-spacing: 1px;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+
+  .station-alert {
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 2px;
+    margin-top: 4px;
+  }
+
+  .station-alert.none { background: var(--bg3); color: var(--text3); }
+  .station-alert.incoming { background: rgba(240,180,41,0.1); color: var(--accent); border: 1px solid rgba(240,180,41,0.3); }
+
+  /* Stats */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .stat-val {
+    font-family: var(--display);
+    font-size: 32px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text2);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* History table */
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .history-table th {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .history-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(30,37,48,0.5);
+    color: var(--text);
+  }
+
+  .history-table tr:hover td { background: var(--bg3); }
+
+  .history-table .loco-cell {
+    font-family: var(--display);
+    font-size: 18px;
+    color: var(--accent);
+  }
+
+  /* Predictions */
+  .prediction-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-bottom: 6px;
+    background: var(--bg);
+  }
+
+  .confidence {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    border: 2px solid;
+  }
+
+  .confidence.high { border-color: var(--green); color: var(--green); }
+  .confidence.med { border-color: var(--accent); color: var(--accent); }
+  .confidence.low { border-color: var(--text3); color: var(--text3); }
+
+  .pred-info { flex: 1; }
+  .pred-title { font-size: 12px; color: var(--text); }
+  .pred-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  .refresh-time {
+    font-size: 10px;
+    color: var(--text3);
+  }
+
+  .empty-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--text3);
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  .ticker {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 24px;
+    font-size: 11px;
+    color: var(--text2);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .ticker-inner {
+    display: inline-block;
+    animation: ticker 30s linear infinite;
+  }
+
+  @keyframes ticker {
+    0% { transform: translateX(100vw); }
+    100% { transform: translateX(-100%); }
+  }
+
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text3);
+    font-size: 11px;
+    padding: 12px;
+  }
+
+  .spinner {
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 768px) {
+    .container { grid-template-columns: 1fr; padding: 12px; }
+    .card.full-width { grid-column: 1; }
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .loco-row { grid-template-columns: 50px 1fr 60px; }
+    .speed-text { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    MNR LOCO TRACKER
+    <span class="logo-sub">Metro-North Railroad · Live Equipment Monitor</span>
+  </div>
+  <div class="status-bar">
+    <span class="pulse"></span>
+    <span id="status-text">Connecting...</span>
+    <span class="refresh-time" id="last-update"></span>
+  </div>
+</div>
+
+<div class="ticker">
+  <span class="ticker-inner" id="ticker-text">Loading live data...</span>
+</div>
+
+<div class="container">
+
+  <!-- Live Locos -->
+  <div class="card full-width">
+    <div class="card-header">
+      <span class="card-title"><span class="dot"></span>LIVE — ALL 3-DIGIT LOCOS ON NETWORK</span>
+      <span class="refresh-time" id="loco-count">—</span>
+    </div>
+    <div class="card-body" id="live-locos">
+      <div class="loading"><div class="spinner"></div> Fetching live data...</div>
+    </div>
+  </div>
+
+  <!-- Your Stations -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title"><span class="dot"></span>YOUR STATIONS</span>
+    </div>
+    <div class="card-body" id="stations">
+      <div class="loading"><div class="spinner"></div> Checking stations...</div>
+    </div>
+  </div>
+
+  <!-- Predictions -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title"><span class="dot"></span>PREDICTIONS</span>
+      <span class="refresh-time">Based on logged data</span>
+    </div>
+    <div class="card-body" id="predictions">
+      <div class="loading"><div class="spinner"></div> Analyzing patterns...</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="card full-width">
+    <div class="card-header">
+      <span class="card-title"><span class="dot"></span>HISTORICAL STATS</span>
+    </div>
+    <div class="card-body">
+      <div class="stat-grid" id="stats-grid">
+        <div class="stat-box"><div class="stat-val" id="stat-total">—</div><div class="stat-label">Total Sightings</div></div>
+        <div class="stat-box"><div class="stat-val" id="stat-locos">—</div><div class="stat-label">Unique Locos</div></div>
+        <div class="stat-box"><div class="stat-val" id="stat-top">—</div><div class="stat-label">Most Active Loco</div></div>
+        <div class="stat-box"><div class="stat-val" id="stat-ct">—</div><div class="stat-label">CT Line Sightings</div></div>
+      </div>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Loco</th>
+            <th>Sightings</th>
+            <th>Lines</th>
+            <th>Last Seen</th>
+            <th>Common Trains</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="5"><div class="loading"><div class="spinner"></div> Loading history...</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIG — Replace with your actual Supabase credentials
+// ============================================================
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+const MTA_URL = 'https://backend-unified.mylirr.org/locations?geometry=TRACK_TURF&railroad=BOTH';
+const CT_BRANCHES = new Set(['New Haven', 'Danbury', 'Waterbury', 'New Canaan', 'Oyster Bay']);
+const TARGET_STOPS = new Set(['2DA', '2NO']);
+const STOP_NAMES = { '2DA': 'Darien', '2NO': 'Noroton Heights' };
+
+function isTargetLoco(n) {
+  return (n >= 300 && n <= 350) || n === 250;
+}
+
+function is3Digit(n) {
+  return n >= 100 && n <= 999;
+}
+
+function branchClass(b) {
+  return 'branch-' + (b || 'Unknown').replace(/\s/g, '');
+}
+
+function timeSince(ts) {
+  const d = new Date(ts);
+  const diff = Math.floor((Date.now() - d) / 1000);
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+
+// ============================================================
+// LIVE DATA from MTA API
+// ============================================================
+async function fetchLive() {
+  try {
+    const res = await fetch(MTA_URL, {
+      headers: {
+        'accept': 'application/json',
+        'accept-version': '3.0',
+        'origin': 'https://radar.mta.info'
+      }
+    });
+    return await res.json();
+  } catch(e) {
+    console.error('MTA fetch error:', e);
+    return [];
+  }
+}
+
+function renderLive(data) {
+  const locos = [];
+  const stationAlerts = { 'Darien': [], 'Noroton Heights': [] };
+
+  for (const train of data) {
+    const consist = train.consist || {};
+    const cars = consist.cars || [];
+    const loc = train.location || {};
+    const details = train.details || {};
+    const stops = details.stops || [];
+    const branch = details.branch || '?';
+    const headsign = details.headsign || '?';
+    const trainNum = train.train_num || '?';
+    const nearby = loc.nearby || '?';
+    const speed = loc.speed || 0;
+
+    for (const car of cars) {
+      const n = car.number || 0;
+      if (!car.locomotive || !is3Digit(n)) continue;
+
+      // Check station
+      let atStation = null;
+      for (const stop of stops) {
+        if (TARGET_STOPS.has(stop.code)) {
+          atStation = STOP_NAMES[stop.code];
+          const schedTime = stop.sched_time ? new Date(stop.sched_time * 1000) : null;
+          const timeStr = schedTime ? schedTime.toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : '?';
+          stationAlerts[atStation].push({ loco: n, train: trainNum, time: timeStr, status: stop.stop_status });
+          break;
+        }
+      }
+
+      locos.push({ n, trainNum, branch, headsign, nearby, speed, atStation });
+    }
+  }
+
+  locos.sort((a, b) => a.n - b.n);
+
+  // Render live locos
+  const container = document.getElementById('live-locos');
+  if (!locos.length) {
+    container.innerHTML = '<div class="empty-state">NO 3-DIGIT LOCOS ACTIVE RIGHT NOW</div>';
+  } else {
+    container.innerHTML = locos.map(l => {
+      const isTarget = isTargetLoco(l.n);
+      const isCT = CT_BRANCHES.has(l.branch);
+      const speedPct = Math.min((l.speed / 100) * 100, 100);
+      const cls = isTarget ? 'target' : isCT ? 'ct-line' : '';
+      return `
+        <div class="loco-row ${cls}">
+          <div class="loco-num ${isTarget ? 'target-loco' : ''}">${l.n}</div>
+          <div class="loco-info">
+            <div class="loco-train">Train ${l.trainNum} → ${l.headsign}</div>
+            <div class="loco-detail">Near ${l.nearby}${l.atStation ? ' · <b>Due at '+l.atStation+'</b>' : ''}</div>
+            <div class="speed-bar"><div class="speed-fill" style="width:${speedPct}%"></div></div>
+          </div>
+          <div class="branch-badge ${branchClass(l.branch)}">${l.branch}</div>
+          <div class="speed-text">${Math.round(l.speed)} mph</div>
+        </div>`;
+    }).join('');
+  }
+
+  document.getElementById('loco-count').textContent = locos.length + ' locos';
+
+  // Render stations
+  const stDiv = document.getElementById('stations');
+  stDiv.innerHTML = ['Darien', 'Noroton Heights'].map(st => {
+    const alerts = stationAlerts[st];
+    return `
+      <div class="station-card">
+        <div class="station-name">${st}</div>
+        ${alerts.length
+          ? alerts.map(a => `<div class="station-alert incoming">🚂 Loco ${a.loco} · Train ${a.train} · ${a.status} · ${a.time}</div>`).join('')
+          : '<div class="station-alert none">No target locos scheduled</div>'
+        }
+      </div>`;
+  }).join('');
+
+  // Ticker
+  const tickerParts = locos.map(l => `Loco ${l.n} · ${l.branch} · ${Math.round(l.speed)}mph`);
+  document.getElementById('ticker-text').textContent = tickerParts.join('   ·   ');
+
+  // Status
+  document.getElementById('status-text').textContent = 'Live · ' + locos.length + ' locos';
+  document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+// ============================================================
+// SUPABASE — History & Stats
+// ============================================================
+async function fetchSupabase(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    }
+  });
+  return res.json();
+}
+
+async function loadStats() {
+  try {
+    // Get all sightings grouped by loco
+    const data = await fetchSupabase('sightings?select=loco,branch,train,seen_at&order=seen_at.desc&limit=5000');
+
+    if (!data || data.error) return;
+
+    const byLoco = {};
+    let ctCount = 0;
+
+    for (const row of data) {
+      const n = row.loco;
+      if (!byLoco[n]) byLoco[n] = { sightings: 0, branches: new Set(), trains: new Set(), lastSeen: null };
+      byLoco[n].sightings++;
+      byLoco[n].branches.add(row.branch);
+      byLoco[n].trains.add(row.train);
+      if (!byLoco[n].lastSeen || row.seen_at > byLoco[n].lastSeen) byLoco[n].lastSeen = row.seen_at;
+      if (CT_BRANCHES.has(row.branch)) ctCount++;
+    }
+
+    const sorted = Object.entries(byLoco).sort((a, b) => b[1].sightings - a[1].sightings);
+    const topLoco = sorted[0];
+
+    document.getElementById('stat-total').textContent = data.length.toLocaleString();
+    document.getElementById('stat-locos').textContent = sorted.length;
+    document.getElementById('stat-top').textContent = topLoco ? topLoco[0] : '—';
+    document.getElementById('stat-ct').textContent = ctCount.toLocaleString();
+
+    // History table
+    const tbody = document.getElementById('history-body');
+    tbody.innerHTML = sorted.map(([loco, info]) => {
+      const trains = [...info.trains].slice(0, 4).join(', ') + (info.trains.size > 4 ? '...' : '');
+      const branches = [...info.branches].join(', ');
+      const isTarget = isTargetLoco(parseInt(loco));
+      return `
+        <tr>
+          <td class="loco-cell" style="${isTarget ? 'text-shadow: 0 0 10px rgba(240,180,41,0.5)' : ''}">${loco}</td>
+          <td>${info.sightings.toLocaleString()}</td>
+          <td>${branches}</td>
+          <td>${timeSince(info.lastSeen)}</td>
+          <td style="color:var(--text2)">${trains}</td>
+        </tr>`;
+    }).join('');
+
+    // Predictions
+    renderPredictions(sorted);
+
+  } catch(e) {
+    console.error('Supabase error:', e);
+  }
+}
+
+function renderPredictions(sorted) {
+  const predDiv = document.getElementById('predictions');
+  const ctLocos = sorted.filter(([loco, info]) => {
+    return [...info.branches].some(b => CT_BRANCHES.has(b));
+  });
+
+  if (!ctLocos.length) {
+    predDiv.innerHTML = '<div class="empty-state">NOT ENOUGH DATA YET<br><span style="font-size:10px;margin-top:4px;display:block">Need 7+ days for predictions</span></div>';
+    return;
+  }
+
+  predDiv.innerHTML = ctLocos.slice(0, 5).map(([loco, info]) => {
+    const total = info.sightings;
+    const confidence = total > 1000 ? 'high' : total > 300 ? 'med' : 'low';
+    const confLabel = total > 1000 ? 'HIGH' : total > 300 ? 'MED' : 'LOW';
+    const branches = [...info.branches].filter(b => CT_BRANCHES.has(b)).join(', ');
+    return `
+      <div class="prediction-row">
+        <div class="confidence ${confidence}">${confLabel}</div>
+        <div class="pred-info">
+          <div class="pred-title">Loco ${loco} · ${branches}</div>
+          <div class="pred-sub">${total.toLocaleString()} sightings · ${info.trains.size} different trains</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+async function refresh() {
+  const data = await fetchLive();
+  renderLive(data);
+}
+
+async function init() {
+  await refresh();
+  await loadStats();
+  setInterval(refresh, 30000);       // Live data every 30s
+  setInterval(loadStats, 300000);    // Stats every 5 min
+}
+
+init();
+</script>
+</body>
+</html>

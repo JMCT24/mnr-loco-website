@@ -488,10 +488,24 @@
 const SUPABASE_URL = 'https://otbofbntmbozdzqkbhow.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90Ym9mYm50bWJvemR6cWtiaG93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2NTk4MDgsImV4cCI6MjA5MzIzNTgwOH0.T0sfoQjy7t_UpEgoNLepQh6fdArQOCC9E6gL93ni6EQ';
 
-const MTA_URL = 'https://backend-unified.mylirr.org/locations?geometry=TRACK_TURF&railroad=BOTH';
+const MTA_URL = 'https://backend-unified.mylirr.org/locations?geometry=TRACK_TURF&railroad=MNR';
 const CT_BRANCHES = new Set(['New Haven', 'Danbury', 'Waterbury', 'New Canaan', 'Oyster Bay']);
 const TARGET_STOPS = new Set(['2DA', '2NO']);
 const STOP_NAMES = { '2DA': 'Darien', '2NO': 'Noroton Heights' };
+
+// Historical data (updated 2026-05-10)
+const HISTORICAL = [
+  { loco: 304, sightings: 8128, lines: ['Danbury','Harlem','Hudson'], lastSeen: '2026-05-10' },
+  { loco: 312, sightings: 6973, lines: ['Hudson'], lastSeen: '2026-05-10' },
+  { loco: 250, sightings: 6266, lines: ['Danbury','Hudson','New Haven'], lastSeen: '2026-05-10' },
+  { loco: 302, sightings: 6040, lines: ['Danbury','Hudson'], lastSeen: '2026-05-08' },
+  { loco: 303, sightings: 5393, lines: ['Hudson'], lastSeen: '2026-05-09' },
+  { loco: 306, sightings: 5186, lines: ['Danbury','Harlem','Hudson'], lastSeen: '2026-05-10' },
+  { loco: 307, sightings: 5049, lines: ['Harlem','Hudson'], lastSeen: '2026-05-09' },
+  { loco: 301, sightings: 1577, lines: ['Hudson'], lastSeen: '2026-05-10' },
+  { loco: 310, sightings: 1221, lines: ['Hudson'], lastSeen: '2026-05-10' },
+  { loco: 305, sightings: 1075, lines: ['Hudson'], lastSeen: '2026-05-03' },
+];
 
 function isTargetLoco(n) {
   return (n >= 300 && n <= 350) || n === 250;
@@ -633,9 +647,33 @@ async function fetchSupabase(path) {
   return res.json();
 }
 
+function renderHistorical(data) {
+  const total = data.reduce((s, r) => s + r.sightings, 0);
+  const ctCount = data.reduce((s, r) => s + (r.lines.some(l => CT_BRANCHES.has(l)) ? r.sightings : 0), 0);
+  const top = data[0];
+  document.getElementById('stat-total').textContent = total.toLocaleString();
+  document.getElementById('stat-locos').textContent = data.length;
+  document.getElementById('stat-top').textContent = top ? top.loco : '—';
+  document.getElementById('stat-ct').textContent = ctCount.toLocaleString();
+  const tbody = document.getElementById('history-body');
+  tbody.innerHTML = data.map(r => {
+    const isTarget = isTargetLoco(r.loco);
+    const ctLine = r.lines.some(l => CT_BRANCHES.has(l));
+    return `<tr>
+      <td class="loco-cell" style="${isTarget ? 'text-shadow:0 0 10px rgba(240,180,41,0.5)' : ''}">${r.loco}</td>
+      <td>${r.sightings.toLocaleString()}</td>
+      <td>${r.lines.join(', ')}${ctLine ? ' <span style="color:var(--green)">★</span>' : ''}</td>
+      <td>${r.lastSeen}</td>
+      <td style="color:var(--text2)">—</td>
+    </tr>`;
+  }).join('');
+  renderPredictions(data.map(r => ({ loco: r.loco, sightings: r.sightings, lines: r.lines })));
+}
+
 async function loadStats() {
+  renderHistorical(HISTORICAL);
+  if (SUPABASE_URL === 'YOUR_SUPABASE_URL') return;
   try {
-    // Get all sightings grouped by loco
     const data = await fetchSupabase('sightings?select=loco,branch,train,seen_at&order=seen_at.desc&limit=5000');
 
     if (!data || data.error) return;
@@ -655,58 +693,45 @@ async function loadStats() {
 
     const sorted = Object.entries(byLoco).sort((a, b) => b[1].sightings - a[1].sightings);
     const topLoco = sorted[0];
-
     document.getElementById('stat-total').textContent = data.length.toLocaleString();
     document.getElementById('stat-locos').textContent = sorted.length;
     document.getElementById('stat-top').textContent = topLoco ? topLoco[0] : '—';
     document.getElementById('stat-ct').textContent = ctCount.toLocaleString();
-
-    // History table
     const tbody = document.getElementById('history-body');
     tbody.innerHTML = sorted.map(([loco, info]) => {
       const trains = [...info.trains].slice(0, 4).join(', ') + (info.trains.size > 4 ? '...' : '');
       const branches = [...info.branches].join(', ');
       const isTarget = isTargetLoco(parseInt(loco));
-      return `
-        <tr>
-          <td class="loco-cell" style="${isTarget ? 'text-shadow: 0 0 10px rgba(240,180,41,0.5)' : ''}">${loco}</td>
-          <td>${info.sightings.toLocaleString()}</td>
-          <td>${branches}</td>
-          <td>${timeSince(info.lastSeen)}</td>
-          <td style="color:var(--text2)">${trains}</td>
-        </tr>`;
+      return `<tr>
+        <td class="loco-cell" style="${isTarget ? 'text-shadow:0 0 10px rgba(240,180,41,0.5)' : ''}">${loco}</td>
+        <td>${info.sightings.toLocaleString()}</td>
+        <td>${branches}</td>
+        <td>${timeSince(info.lastSeen)}</td>
+        <td style="color:var(--text2)">${trains}</td>
+      </tr>`;
     }).join('');
-
-    // Predictions
-    renderPredictions(sorted);
-
-  } catch(e) {
-    console.error('Supabase error:', e);
-  }
+    renderPredictions(sorted.map(([loco, info]) => ({ loco: parseInt(loco), sightings: info.sightings, lines: [...info.branches] })));
+  } catch(e) { console.error('Supabase error:', e); }
 }
 
-function renderPredictions(sorted) {
+function renderPredictions(data) {
   const predDiv = document.getElementById('predictions');
-  const ctLocos = sorted.filter(([loco, info]) => {
-    return [...info.branches].some(b => CT_BRANCHES.has(b));
-  });
-
+  const ctLocos = data.filter(r => r.lines.some(l => CT_BRANCHES.has(l)));
   if (!ctLocos.length) {
     predDiv.innerHTML = '<div class="empty-state">NOT ENOUGH DATA YET<br><span style="font-size:10px;margin-top:4px;display:block">Need 7+ days for predictions</span></div>';
     return;
   }
-
-  predDiv.innerHTML = ctLocos.slice(0, 5).map(([loco, info]) => {
-    const total = info.sightings;
-    const confidence = total > 1000 ? 'high' : total > 300 ? 'med' : 'low';
-    const confLabel = total > 1000 ? 'HIGH' : total > 300 ? 'MED' : 'LOW';
-    const branches = [...info.branches].filter(b => CT_BRANCHES.has(b)).join(', ');
+  predDiv.innerHTML = ctLocos.slice(0, 6).map(r => {
+    const confidence = r.sightings > 5000 ? 'high' : r.sightings > 1000 ? 'med' : 'low';
+    const confLabel = r.sightings > 5000 ? 'HIGH' : r.sightings > 1000 ? 'MED' : 'LOW';
+    const ctLines = r.lines.filter(l => CT_BRANCHES.has(l)).join(', ');
+    const isNH = r.lines.includes('New Haven');
     return `
       <div class="prediction-row">
         <div class="confidence ${confidence}">${confLabel}</div>
         <div class="pred-info">
-          <div class="pred-title">Loco ${loco} · ${branches}</div>
-          <div class="pred-sub">${total.toLocaleString()} sightings · ${info.trains.size} different trains</div>
+          <div class="pred-title">Loco ${r.loco} · ${ctLines}${isNH ? ' <span style="color:var(--green)">✓ New Haven</span>' : ''}</div>
+          <div class="pred-sub">${r.sightings.toLocaleString()} sightings recorded</div>
         </div>
       </div>`;
   }).join('');

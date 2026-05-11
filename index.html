@@ -344,56 +344,39 @@ function renderLive(data) {
 // SUPABASE
 // ============================================================
 async function loadStats() {
-  renderHistorical(HISTORICAL); // show baked-in data immediately
-  if (SUPABASE_URL === 'YOUR_SUPABASE_URL') return;
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/sightings?select=loco,branch,seen_at&limit=50000`, {
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-    });
-    const data = await res.json();
-    if (!data || data.error || !data.length) return;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/loco_stats?select=*`, {
+  headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+});
+const data = await res.json();
+if (!data || data.error || !data.length) return;
 
-    const byLoco = {};
-    let ctCount = 0;
-    for (const row of data) {
-      const n = row.loco;
-      if (!byLoco[n]) byLoco[n] = { sightings: 0, branches: new Set(), trains: new Set(), lastSeen: null };
-      byLoco[n].sightings++;
-      byLoco[n].branches.add(row.branch);
-      byLoco[n].trains.add(row.train);
-      if (!byLoco[n].lastSeen || row.seen_at > byLoco[n].lastSeen) byLoco[n].lastSeen = row.seen_at;
-      if (CT_BRANCHES.has(row.branch)) ctCount++;
-    }
+let ctCount = 0;
+const sorted = data;
+const top = sorted[0];
+document.getElementById('stat-total').textContent = sorted.reduce((s,r) => s + r.sightings, 0).toLocaleString();
+document.getElementById('stat-locos').textContent = sorted.length;
+document.getElementById('stat-top').textContent = top ? top.loco : '—';
 
-    const sorted = Object.entries(byLoco).sort((a, b) => b[1].sightings - a[1].sightings);
-    const top = sorted[0];
-    document.getElementById('stat-total').textContent = data.length.toLocaleString();
-    document.getElementById('stat-locos').textContent = sorted.length;
-    document.getElementById('stat-top').textContent = top ? top[0] : '—';
-    document.getElementById('stat-ct').textContent = ctCount.toLocaleString();
+document.getElementById('history-body').innerHTML = sorted.map(r => {
+  const lines = r.lines || [];
+  const isTarget = isTargetLoco(parseInt(r.loco));
+  const ctLine = lines.some(b => CT_BRANCHES.has(b));
+  if (ctLine) ctCount += r.sightings;
+  return `<tr>
+    <td class="loco-cell" style="${isTarget ? 'text-shadow:0 0 10px rgba(240,180,41,0.5)' : ''}">${r.loco}</td>
+    <td>${r.sightings.toLocaleString()}</td>
+    <td>${lines.join(', ')}${ctLine ? ' <span style="color:var(--green)">★</span>' : ''}</td>
+    <td>${timeSince(r.last_seen)}</td>
+    <td style="color:var(--text2)">—</td>
+  </tr>`;
+}).join('');
 
-    document.getElementById('history-body').innerHTML = sorted.map(([loco, info]) => {
-      const trains = [...info.trains].slice(0, 4).join(', ') + (info.trains.size > 4 ? '...' : '');
-      const branches = [...info.branches].join(', ');
-      const isTarget = isTargetLoco(parseInt(loco));
-      const ctLine = [...info.branches].some(b => CT_BRANCHES.has(b));
-      return `<tr>
-        <td class="loco-cell" style="${isTarget ? 'text-shadow:0 0 10px rgba(240,180,41,0.5)' : ''}">${loco}</td>
-        <td>${info.sightings.toLocaleString()}</td>
-        <td>${branches}${ctLine ? ' <span style="color:var(--green)">★</span>' : ''}</td>
-        <td>${timeSince(info.lastSeen)}</td>
-        <td style="color:var(--text2)">${trains}</td>
-      </tr>`;
-    }).join('');
-
-    renderPredictions(sorted.map(([loco, info]) => ({
-      loco: parseInt(loco),
-      sightings: info.sightings,
-      lines: [...info.branches]
-    })));
-  } catch(e) { console.error('Supabase error:', e); }
-}
-
+document.getElementById('stat-ct').textContent = ctCount.toLocaleString();
+renderPredictions(sorted.map(r => ({
+  loco: parseInt(r.loco),
+  sightings: r.sightings,
+  lines: r.lines || []
+})));
 // ============================================================
 // MAIN
 // ============================================================
